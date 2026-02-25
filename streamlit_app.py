@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 load_dotenv()
 MANAGER_USERNAME = os.getenv("MANAGER_USERNAME")
 MANAGER_PASSWORD = os.getenv("MANAGER_PASSWORD")
+MAIN_URL = os.getenv("MAIN_URL")
 if not MANAGER_USERNAME or not MANAGER_PASSWORD:
     st.error("Missing Environment Variables! Please check your .env file.")
     st.stop()
@@ -184,7 +185,7 @@ def fetch_analyzed_leads_from_db(max_leads: int = 50) -> List[Dict]:
     """
     # This prompt tells Agent 1 to look for ANY lead that has a transcript (mock or real)
     special_prompt = "Fetch leads completed mock and awaiting analysis"
-    API_URL = "http://localhost:8000/api/v1/agent1/fetch_leads"
+    API_URL = f"{MAIN_URL}/api/v1/agent1/fetch_leads"
 
     try:
         response = requests.post(
@@ -540,7 +541,7 @@ def render_agent1_page():
 
         # --- API CALL LOGIC (Fetch Leads) ---
         if submitted:
-            API_URL = "http://localhost:8000/api/v1/agent1/fetch_leads"
+            API_URL = f"{MAIN_URL}/api/v1/agent1/fetch_leads"
             with st.spinner(f"Agent 1 interpreting prompt and fetching leads from MongoDB..."):
                 try:
                     response = requests.post(API_URL, json={"manager_prompt": prompt, "max_leads": max_leads_to_fetch},
@@ -588,7 +589,7 @@ def render_agent1_page():
         # --- NEXT AGENT BUTTON (Agent 2 Trigger) ---
         if st.button(f"📞 Send {max_calls_to_initiate} Leads to Agent 2 (Initiate Call Campaign)", type="secondary",
                      width='stretch'):
-            AGENT2_API_URL = "http://localhost:8000/api/v1/agent2/initiate_call"
+            AGENT2_API_URL = "{MAIN_URL}/api/v1/agent2/initiate_call"
             campaign_list = st.session_state['fetched_leads'][:max_calls_to_initiate]
 
             with st.spinner(f"Agent 2 initiating {len(campaign_list)} voice calls via bolna.ai..."):
@@ -861,7 +862,7 @@ def render_agent3_page():
     lead_data = {}
     if target_lead_id:
         try:
-            response = requests.get(f"http://localhost:8000/api/v1/lead/{target_lead_id}", timeout=3)
+            response = requests.get(f"{MAIN_URL}/api/v1/lead/{target_lead_id}", timeout=3)
             if response.status_code == 200:
                 lead_data = response.json()
         except Exception:
@@ -890,7 +891,7 @@ def render_agent3_page():
     # 1. RUN AGENT 3 (Analyze)
     if a3_can_run:
         if st.button("🧠 Run Agent 3 (Analyze)", key='btn_a3', type='primary', use_container_width=True):
-            API_URL = f"http://localhost:8000/api/v1/agent3/analyze_lead/{target_lead_id}"
+            API_URL = f"{MAIN_URL}/api/v1/agent3/analyze_lead/{target_lead_id}"
             with st.spinner("Agent 3 running NLP analysis..."):
                 response = requests.post(API_URL, timeout=90)
                 if response.status_code == 200:
@@ -1003,14 +1004,14 @@ def render_agent4_followup_page():
             lead_id = lead["lead_id"]
 
             # 1. Run Agent 3 Analysis
-            safe_post(f"http://localhost:8000/api/v1/agent3/analyze_lead/{lead_id}", json_payload={}, timeout=60)
+            safe_post(f"{MAIN_URL}/api/v1/agent3/analyze_lead/{lead_id}", json_payload={}, timeout=60)
 
             # 2. Run Agent 4 Follow-up
-            API_URL = f"http://localhost:8000/api/v1/agent4/generate_followup/{lead_id}"
+            API_URL = f"{MAIN_URL}/api/v1/agent4/generate_followup/{lead_id}"
             ok, resp = safe_post(API_URL, json_payload={}, timeout=60)
 
             # Fetch updated data to display result
-            ok_final, lead_final = safe_get(f"http://localhost:8000/api/v1/lead/{lead_id}")
+            ok_final, lead_final = safe_get(f"{MAIN_URL}/api/v1/lead/{lead_id}")
 
             if ok and ok_final:
                 report = resp.get('report', {})
@@ -1110,11 +1111,11 @@ def render_agent5_scoring_page():
             for i, lead in enumerate(leads_for_scoring, start=1):
                 lead_id = lead.get("lead_id")
 
-                url = f"http://localhost:8000/api/v1/agent5/run_scoring/{lead_id}"
+                url = f"{MAIN_URL}/api/v1/agent5/run_scoring/{lead_id}"
                 ok, resp = safe_post(url)
 
                 # Fetch updated lead
-                ok_final, lead_final = safe_get(f"http://localhost:8000/api/v1/lead/{lead_id}")
+                ok_final, lead_final = safe_get(f"{MAIN_URL}/api/v1/lead/{lead_id}")
 
                 if ok_final:
                     st.session_state.bulk_scoring_results.append({
@@ -1200,7 +1201,7 @@ def render_agent6_xai_page():
     st.markdown("---")
 
     with st.spinner("Calculating Feature Contributions (SHAP)..."):
-        ok, response = safe_get(f"http://localhost:8000/api/v1/agent5/explain/{target_lead_id}")
+        ok, response = safe_get(f"{MAIN_URL}/api/v1/agent5/explain/{target_lead_id}")
 
     if ok and response.get("success"):
         st.success("Score Explanation Loaded Successfully!")
@@ -1331,7 +1332,7 @@ def render_live_monitor_page():
 
     if st.button("Start/Refresh Monitoring") and lead_id:
 
-        API_URL_BASE = "http://localhost:8000/api/v1/lead/"
+        API_URL_BASE = "{MAIN_URL}/api/v1/lead/"
         st.warning(f"Monitoring Lead {lead_id}. Status will refresh every 2 seconds.")
 
         placeholder = st.empty()
@@ -1382,7 +1383,7 @@ def render_live_monitor_page():
 
         except requests.exceptions.ConnectionError:
             st.error(
-                "Connection Error: Ensure the FastAPI server is running (uvicorn main:app --reload) at http://localhost:8000.")
+                "Connection Error: Ensure the FastAPI server is running (uvicorn main:app --reload) at {MAIN_URL}")
         except Exception as e:
             st.error(f"An unexpected error occurred during monitoring: {e}")
 
