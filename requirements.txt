@@ -25,3 +25,4 @@ matplotlib
 # --- FRONTEND UI ---
 streamlit
 Pillow
+Plotly
