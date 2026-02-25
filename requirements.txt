@@ -1,0 +1,27 @@
+# --- CORE BACKEND (FastAPI) ---
+fastapi
+uvicorn
+pydantic
+python-dotenv
+requests
+python-multipart
+
+# --- DATABASE ---
+pymongo
+motor
+
+# --- MACHINE LEARNING & PREDICTION ---
+numpy
+pandas
+scikit-learn
+joblib
+google-genai
+openai
+
+# --- EXPLAINABLE AI (XAI) ---
+shap
+matplotlib
+
+# --- FRONTEND UI ---
+streamlit
+Pillow
