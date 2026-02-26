@@ -138,7 +138,7 @@ def handle_login_submit(username, password):
         st.error("Invalid Username or Password.")
 
 
-def safe_post(url: str, json_payload: dict = None, timeout: int = 30):
+def safe_post(url: str, json_payload: dict = None, timeout: int = 120): #30
     """
     Safely perform a POST request and return (ok: bool, payload_or_error).
     """
@@ -158,7 +158,7 @@ def safe_post(url: str, json_payload: dict = None, timeout: int = 30):
         return False, {"exception": str(e), "trace": traceback.format_exc()}
 
 
-def safe_get(url: str, timeout: int = 10):
+def safe_get(url: str, timeout: int = 120): #10
     """
     Safely perform a GET request and return (ok: bool, payload_or_error).
     """
@@ -191,7 +191,7 @@ def fetch_analyzed_leads_from_db(max_leads: int = 50) -> List[Dict]:
         response = requests.post(
             API_URL,
             json={"manager_prompt": special_prompt, "max_leads": max_leads},
-            timeout=5
+            timeout=60         #5-60
         )
         if response.status_code == 200:
             all_fetched_leads = response.json()
@@ -545,7 +545,7 @@ def render_agent1_page():
             with st.spinner(f"Agent 1 interpreting prompt and fetching leads from MongoDB..."):
                 try:
                     response = requests.post(API_URL, json={"manager_prompt": prompt, "max_leads": max_leads_to_fetch},
-                                             timeout=60)
+                                             timeout=140) #60
                     if response.status_code == 200:
                         st.session_state['fetched_leads'] = response.json()
                         st.success(
@@ -589,7 +589,7 @@ def render_agent1_page():
         # --- NEXT AGENT BUTTON (Agent 2 Trigger) ---
         if st.button(f"📞 Send {max_calls_to_initiate} Leads to Agent 2 (Initiate Call Campaign)", type="secondary",
                      width='stretch'):
-            AGENT2_API_URL = "{MAIN_URL}/api/v1/agent2/initiate_call"
+            AGENT2_API_URL = f"{MAIN_URL}/api/v1/agent2/initiate_call"
             campaign_list = st.session_state['fetched_leads'][:max_calls_to_initiate]
 
             with st.spinner(f"Agent 2 initiating {len(campaign_list)} voice calls via bolna.ai..."):

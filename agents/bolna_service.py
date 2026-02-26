@@ -42,7 +42,7 @@ def start_outbound_call(phone_number: str, conversation_context: str, lead_id: s
     }
 
     try:
-        response = requests.post(OUTBOUND_URL, headers=headers, json=payload, timeout=20)
+        response = requests.post(OUTBOUND_URL, headers=headers, json=payload, timeout=80) #20
 
         if response.status_code in (200, 201):
             return {"success": True, "response": response.json()}
