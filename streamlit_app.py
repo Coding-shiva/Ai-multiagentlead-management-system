@@ -12,6 +12,10 @@ import numpy as np
 from shap import Explanation
 import shap
 import plotly.graph_objects as go
+
+import plotly.express as px
+import pandas as pd
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 
 
@@ -516,7 +520,47 @@ def render_agent1_page():
 
     st.button("⬅ Back to Dashboard", key="back_to_dash", on_click=lambda: st.session_state.update(page='Dashboard'))
     st.markdown("---")
+    st.subheader("📂 Google Sheets Automation")
+    sync_col, status_col = st.columns([2, 1])
 
+    with sync_col:
+        st.write("Sync leads directly from your connected Google Sheet.")
+        sheet_name = st.text_input("Google Sheet Name", value="Sales_Leads_2026")
+
+        # 1. Sirf button click hone par hi niche ka logic chalna chahiye
+        if st.button("🔄 Sync New Leads from Sheets", type="primary", width='stretch'):
+
+            import sys
+            import os
+            import time
+
+            # Path Setup
+            base_dir = os.path.dirname(os.path.abspath(__file__))
+            db_path = os.path.join(base_dir, "db")
+
+            if db_path not in sys.path:
+                sys.path.append(db_path)
+
+            try:
+                # 2. Lazy Import: Sirf click hone par import karein
+                from database import sync_google_sheets_to_db
+
+                with st.spinner("Fetching latest data from Google Sheets..."):
+                    count = sync_google_sheets_to_db(sheet_name)
+
+                    if count > 0:
+                        st.success(f"🔥 Dhamaka! {count} naye leads database mein add ho gaye.")
+                        time.sleep(1.5)
+                        st.rerun()
+                    elif count == 0:
+                        st.info("✅ Sab kuch up-to-date hai. Koi naya lead nahi mila.")
+                    else:
+                        st.error("❌ Sync fail! Check credentials.json or Sheet sharing.")
+
+            except Exception as e:
+                st.error(f"⚠️ Import Error: 'database.py' nahi mili. Details: {e}")
+
+    st.markdown("---")
     col_form, col_info = st.columns([2, 1])
 
     with col_form:
@@ -1062,110 +1106,124 @@ def render_agent4_followup_page():
 def render_agent5_scoring_page():
     """
     Triggers Agent 5 scoring for the target lead and displays the final score and tag.
+    Updated to show all eligible leads for scoring.
     """
     st.title("🎯 Agent 5: Bulk Lead Scoring")
     st.subheader("Calculating Final Priority Scores for Follow-up Leads")
+
     try:
-        banner = Image.open("assets/score.jpg")  # update file name based on your asset
-        resized_banner = banner.resize((1200, 360))  # adjust height to fit screen
+        banner = Image.open("assets/score.jpg")
+        resized_banner = banner.resize((1200, 360))
         st.image(resized_banner, use_container_width=True)
 
         st.markdown("""
                <div style='text-align: center; font-size: 20px; font-weight: bold; margin-top: 10px;'>
                    💡 <i>"Scoring insights that drive smarter decisions — every number tells a story."</i> 💡
                </div>
-               """,
-                    unsafe_allow_html=True
-                    )
-
-    except Exception as e:
+               """, unsafe_allow_html=True)
+    except Exception:
         st.info("📍 Ready to calculate final lead scores and prioritize follow-ups efficiently!")
 
     st.button("⬅ Back to Follow-up Page", key="back_to_a4_hub_score",
               on_click=lambda: st.session_state.update(page='Agent4Page'))
     st.markdown("---")
 
-    # Fetch all leads that have completed Agent 4 follow-up
+    # 🟢 UPDATE 1: Fetch leads and allow multiple statuses
     leads = fetch_analyzed_leads_from_db(50)
+
+    # Hum un sabhi leads ko allow karenge jinpar analysis ho chuka hai ya follow-up ho chuka hai
+    allowed_statuses = ["Follow-up Sent - Complete", "Analyzed - Ready for Follow-up", "Transcript Received"]
+
     leads_for_scoring = [
         lead for lead in leads
-        if lead.get('interaction', {}).get('call_status') == "Follow-up Sent - Complete"
+        if any(status in lead.get('interaction', {}).get('call_status', '') for status in allowed_statuses)
+           or "Scored" in lead.get('interaction', {}).get('call_status', '')
     ]
 
     if not leads_for_scoring and not st.session_state.get('bulk_scoring_results'):
-        st.warning("No leads found ready for scoring. Ensure Agent 4 has completed its follow-up run.")
+        st.warning("⚠️ No leads found ready for scoring. Ensure calls have been analyzed by Agent 3.")
         render_footer()
         return
 
+    # Check session state for running status
     if 'bulk_scoring_ran' not in st.session_state:
         st.session_state['bulk_scoring_ran'] = False
 
-    st.info(f"Running final scoring on {len(leads_for_scoring)} leads.")
+    st.info(f"Found {len(leads_for_scoring)} leads eligible for final scoring.")
 
     # --- SCORING EXECUTION ---
-    if st.session_state['bulk_scoring_ran'] == False:
-        if st.button("▶ Run Agent 5: CALCULATE FINAL SCORE (Bulk)", type="primary", width='stretch'):
+    # Sirf unhi leads ko process karenge jo abhi tak score nahi hui hain
+    unscored_leads = [l for l in leads_for_scoring if "Scored" not in l.get('interaction', {}).get('call_status', '')]
+
+    if unscored_leads and st.session_state['bulk_scoring_ran'] == False:
+        if st.button(f"▶ Run Agent 5: CALCULATE SCORE ({len(unscored_leads)} New Leads)", type="primary",
+                     width='stretch'):
             st.session_state.bulk_scoring_results = []
             progress_bar = st.progress(0, text="Starting bulk scoring...")
 
-            for i, lead in enumerate(leads_for_scoring, start=1):
+            for i, lead in enumerate(unscored_leads, start=1):
                 lead_id = lead.get("lead_id")
 
+                # API Call to Agent 5 Backend
                 url = f"{MAIN_URL}/api/v1/agent5/run_scoring/{lead_id}"
                 ok, resp = safe_post(url)
 
-                # Fetch updated lead
+                # Fetch updated lead for the table
                 ok_final, lead_final = safe_get(f"{MAIN_URL}/api/v1/lead/{lead_id}")
 
                 if ok_final:
                     st.session_state.bulk_scoring_results.append({
                         "Lead ID": lead_id,
-                        "Name": lead['personal'].get('name', 'N/A'),
+                        "Name": lead_final['personal'].get('name', 'N/A'),
                         "Final Score": lead_final.get('score', {}).get('current_score', 'N/A'),
                         "Priority Tag": lead_final.get('score', {}).get('priority_tag', 'N/A'),
-                        "Sentiment": lead_final['analysis'].get('sentiment', 'N/A')
-                    })
-                else:
-                    st.session_state.bulk_scoring_results.append({
-                        "Lead ID": lead_id,
-                        "Name": lead['personal'].get('name', 'N/A'),
-                        "Final Score": "ERROR",
-                        "Priority Tag": "ERROR",
-                        "Sentiment": "N/A"
+                        "Sentiment": lead_final.get('analysis', {}).get('sentiment', 'N/A'),
+                        "Status": lead_final.get('interaction', {}).get('call_status', 'N/A')
                     })
 
-                progress_bar.progress(i / len(leads_for_scoring))
+                progress_bar.progress(i / len(unscored_leads))
 
             st.session_state['bulk_scoring_ran'] = True
-            st.success("🎉 Bulk Scoring and Pipeline Cycle Completed!")
+            st.success("🎉 Bulk Scoring Completed!")
             progress_bar.empty()
             st.balloons()
             st.rerun()
 
-    # --- RESULTS TABLE ---
-    if st.session_state.get('bulk_scoring_results'):
-        st.markdown("## 📊 Final Scoring Summary")
-        df = pd.DataFrame(st.session_state['bulk_scoring_results'])
-        st.dataframe(df, width='stretch')
+    # --- 🟢 UPDATE 2: DISPLAY RESULTS (Current Session + Already Scored) ---
+    st.markdown("## 📊 Final Scoring Summary")
+
+    # Table ke liye data prepare karein
+    display_data = []
+    for lead in leads_for_scoring:
+        display_data.append({
+            "Lead ID": lead['lead_id'],
+            "Name": lead['personal'].get('name', 'N/A'),
+            "Final Score": lead.get('score', {}).get('current_score', 'N/A'),
+            "Priority Tag": lead.get('score', {}).get('priority_tag', 'N/A'),
+            "Sentiment": lead.get('analysis', {}).get('sentiment', 'N/A'),
+            "Last Status": lead.get('interaction', {}).get('call_status', 'N/A')
+        })
+
+    if display_data:
+        df = pd.DataFrame(display_data)
+        st.dataframe(df, use_container_width=True)
+    else:
+        st.info("No scored leads to display yet.")
 
     st.markdown("---")
 
     # --- SET TARGET LEAD FOR XAI ---
-    if st.session_state.get('bulk_scoring_results'):
-        st.markdown("### 🔍 Select Lead for Explainable AI")
+    if display_data:
+        st.markdown("### 🔍 Explainable AI Analysis")
 
-        lead_ids = [item["Lead ID"] for item in st.session_state['bulk_scoring_results']]
+        # Dropdown to select lead for XAI
+        lead_ids = [item["Lead ID"] for item in display_data]
+        selected_lead_xai = st.selectbox("Select Lead to Explain Score:", lead_ids)
 
-
-
-        # Save selected lead to session
-
-
-        if st.button("🧠 View XAI Explanation", key="trigger_xai", type="secondary"):
+        if st.button("🧠 View XAI Explanation", key="trigger_xai", type="secondary", width='stretch'):
+            st.session_state.analysis_target_lead_id = selected_lead_xai
             st.session_state.page = "Agent6XaiPage"
             st.rerun()
-
-
 
     render_footer()
 def render_agent6_xai_page():
@@ -1300,6 +1358,132 @@ def render_agent6_xai_page():
               on_click=lambda: st.session_state.update(page="CompletedLeadsPage"))
     render_footer()
 
+
+def render_admin_dashboard():
+    st.title("📊 Strategic Analytics Dashboard")
+    st.markdown("---")
+
+    # 1. Fetch Data
+    leads = fetch_analyzed_leads_from_db(100)
+    if not leads:
+        st.warning("Data unavailable for analytics.")
+        return
+
+    # Data Processing for Charts
+    # Yahan hum 'LastActivity' ko process karte waqt hi datetime mein convert kar rahe hain
+    df_list = []
+    for l in leads:
+        last_act_raw = l.get('interaction', {}).get('last_activity')
+        try:
+            last_act_dt = pd.to_datetime(last_act_raw) if last_act_raw else None
+        except:
+            last_act_dt = None
+
+        df_list.append({
+            "Status": l.get('interaction', {}).get('call_status', 'Unknown'),
+            "Location": l.get('personal', {}).get('location', 'Unknown'),
+            "Tag": l.get('score', {}).get('priority_tag', 'N/A'),
+            "LastActivity": last_act_dt
+        })
+
+    df = pd.DataFrame(df_list)
+
+    # --- ROW 1: Key Metrics ---
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Total Leads", len(leads))
+    col2.metric("Hot Leads", len(df[df['Tag'] == 'Hot']))
+    col3.metric("Pending Calls", len(df[df['Status'] == 'Pending']))
+
+    # Lead Aging Calculation (Red Flags) - FIXED Logic
+    current_time = datetime.now()
+    stuck_leads = []
+    for l in leads:
+        last_act_raw = l.get('interaction', {}).get('last_activity')
+        status = l.get('interaction', {}).get('call_status', '')
+
+        if last_act_raw:
+            try:
+                # String to Datetime conversion fix
+                last_act_dt = pd.to_datetime(last_act_raw)
+                # Check if stuck > 2 days and not yet fully scored
+                if (current_time - last_act_dt).days >= 2 and "Scored" not in status:
+                    stuck_leads.append(l)
+            except:
+                continue
+
+    col4.metric("Red Flags 🚩", len(stuck_leads), delta_color="inverse")
+
+    st.markdown("---")
+
+    # --- ROW 2: Conversion Funnel & Location Analysis ---
+    left_col, right_col = st.columns(2)
+
+    with left_col:
+        st.subheader("📉 Conversion Funnel")
+        funnel_stages = {
+            "Total": len(leads),
+            "Interaction Done": len([l for l in leads if l.get('analysis', {}).get('transcript')]),
+            "Follow-up Sent": len(df[df['Status'].str.contains("Follow-up", na=False)]),
+            "Final Scored": len(df[df['Status'].str.contains("Scored", na=False)])
+        }
+        fig_funnel = go.Figure(go.Funnel(
+            y=list(funnel_stages.keys()),
+            x=list(funnel_stages.values()),
+            textinfo="value+percent initial",
+            marker={"color": ["#636EFA", "#EF553B", "#00CC96", "#AB63FA"]}
+        ))
+        # Updated width to 'stretch'
+        st.plotly_chart(fig_funnel)
+
+    with right_col:
+        st.subheader("📍 Leads by Location (Hot Focus)")
+        hot_df = df[df['Tag'] == 'Hot'].groupby('Location').size().reset_index(name='Counts')
+        if not hot_df.empty:
+            fig_map = px.bar(hot_df, x='Location', y='Counts', color='Counts',
+                             color_continuous_scale='Reds', template="plotly_white")
+            st.plotly_chart(fig_map)
+        else:
+            st.info("No Hot leads to map yet.")
+
+    # --- ROW 3: Lead Aging Alerts ---
+    st.markdown("---")
+    st.subheader("🚩 Aging Alerts (Stuck > 48 Hours)")
+    if stuck_leads:
+        for sl in stuck_leads:
+            name = sl['personal'].get('name', 'Unknown')
+            loc = sl['personal'].get('location', 'Unknown')
+            curr_status = sl['interaction'].get('call_status', 'N/A')
+
+            with st.expander(f"⚠️ {name} ({loc})"):
+                st.write(f"**Current Status:** {curr_status}")
+
+                # Display date safely
+                last_act_val = sl['interaction'].get('last_activity')
+                if last_act_val:
+                    formatted_date = pd.to_datetime(last_act_val).strftime('%Y-%m-%d %H:%M')
+                    st.write(f"**Last Activity:** {formatted_date}")
+
+                st.button(f"Notify Sales Team for {sl['lead_id']}", key=sl['lead_id'], width='stretch')
+    else:
+        st.success("High efficiency! No leads are stuck in the pipeline.")
+        # --- ROW 4: Export Data ---
+
+    st.markdown("---")
+    st.subheader("📥 Export Analytics Report")
+
+    if not df.empty:
+        # CSV mein convert karein
+        csv_data = df.to_csv(index=False).encode('utf-8')
+
+        st.download_button(
+            label="Download Lead Analytics as CSV",
+            data=csv_data,
+            file_name=f"Lead_Analytics_{datetime.now().strftime('%Y%m%d')}.csv",
+            mime="text/csv",
+            width='stretch'
+        )
+    else:
+        st.info("No data available to export.")
 def render_live_monitor_page():
     """
     Renders the dedicated page for monitoring real-time transcription from Bolna.
@@ -1332,7 +1516,7 @@ def render_live_monitor_page():
 
     if st.button("Start/Refresh Monitoring") and lead_id:
 
-        API_URL_BASE = "{MAIN_URL}/api/v1/lead/"
+        API_URL_BASE = "f{MAIN_URL}/api/v1/lead/"
         st.warning(f"Monitoring Lead {lead_id}. Status will refresh every 2 seconds.")
 
         placeholder = st.empty()
@@ -1393,6 +1577,13 @@ def render_live_monitor_page():
 if __name__ == '__main__':
     # 1. Render Navigation Bar on every page load
     render_navbar(st.session_state.logged_in)
+    if st.session_state.logged_in:
+        with st.sidebar:
+            st.title("⚙️ Management")
+            if st.button("📊 Admin Analytics Dashboard", use_container_width=True):
+                st.session_state.page = 'DashboardPage'
+                st.rerun()
+            st.markdown("---")
 
     # 2. Page Routing Logic
 
@@ -1401,7 +1592,7 @@ if __name__ == '__main__':
             st.session_state.page = 'Dashboard'
     else:
         if st.session_state.page in ['Dashboard', 'Agent1Page', 'Agent2Page', 'LiveMonitor', 'Agent3Page',
-                                     'CompletedLeadsPage', 'Agent4Page', 'Agent5Page','Agent6XaiPage']:
+                                     'CompletedLeadsPage', 'Agent4Page', 'Agent5Page','Agent6XaiPage','DashboardPage']:
             st.session_state.page = 'Home'
 
     # Render the correct page based on state
@@ -1431,5 +1622,7 @@ if __name__ == '__main__':
         render_agent5_scoring_page()
     elif st.session_state.page == 'Agent6XaiPage' and st.session_state.logged_in:
         render_agent6_xai_page()  # 🟢 NEW ROUTE MAPPING
+    elif st.session_state.page == 'DashboardPage' and st.session_state.logged_in:
+        render_admin_dashboard()
     else:
         render_home_page()

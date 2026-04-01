@@ -6,11 +6,10 @@ from db.database import get_lead_by_id, update_lead_status
 from datetime import datetime
 import logging
 from typing import Dict
-# 🟢 SMTP Imports
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-import os  # For accessing environment variables
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -25,64 +24,49 @@ except ImportError:
 SENDER_EMAIL = os.getenv("SENDER_EMAIL")
 SENDER_PASSWORD = os.getenv("SENDER_PASSWORD")
 
+# 🟢 1. NEW: Video Link Mapping Dictionary
+# Agent 3 se jo 'course_interest' aayega, uske basis par link select hoga
+COURSE_VIDEO_LINKS = {
+    "MBA": "https://drive.google.com/file/d/1RD1aueZf_TWU_QwARvlzmlMS3gx2tYvU/view?usp=sharing",
+    "Computer Science": "https://drive.google.com/file/d/14LMv5mKseOqg4HvJ9z6D17QROSZ-c_JE/view?usp=sharing"
+}
 
 SYSTEM_INSTRUCTION = """
 You are an expert sales automation system. Your task is to generate a highly personalized, professional, and actionable follow-up email in HTML format. 
-The email must strictly use the lead's name, reference the summary of the previous call, and emphasize the Next Step provided.
+The email must strictly use the lead's name, reference the summary of the previous call, and include a section about a course demo video.
 Output MUST be a single JSON object containing only the keys 'subject' and 'body_html'.
 """
 
-
 class EmailOutput(BaseModel):
-    """Defines the structured output format for Agent 4's email generation."""
     subject: str = Field(description="The email subject line.")
-    body_html: str = Field(description="The full email body in clean HTML format (using <p> tags, <b>, <a>, etc.).")
+    body_html: str = Field(description="The full email body in clean HTML format.")
 
-
-# 🟢 NEW FUNCTION: Handles the physical email delivery
 def send_email_via_smtp(recipient_email: str, subject: str, body_html: str) -> bool:
-    """
-    Attempts to send the email using Gmail's SMTP server (Port 465).
-    """
     if not SENDER_EMAIL or not SENDER_PASSWORD:
-        logger.error("Email credentials missing in .env. Cannot send email.")
+        logger.error("Email credentials missing in .env.")
         return False
-
     try:
         msg = MIMEMultipart('alternative')
         msg['Subject'] = subject
         msg['From'] = SENDER_EMAIL
         msg['To'] = recipient_email
-
-        # Attach HTML body
         msg.attach(MIMEText(body_html, 'html'))
-
-        # Connect to Gmail's secure SMTP server
         with smtplib.SMTP_SSL('smtp.gmail.com', 465) as server:
             server.login(SENDER_EMAIL, SENDER_PASSWORD)
             server.sendmail(SENDER_EMAIL, recipient_email, msg.as_string())
-
         logger.info(f"✅ Email SUCCESSFULLY SENT to {recipient_email}.")
         return True
-
     except Exception as e:
-        logger.error(f"🔴 SMTP Email FAILED to send to {recipient_email}. Error: {e}")
+        logger.error(f"🔴 SMTP Email FAILED: {e}")
         return False
 
-
-# --- Main Reporting Function (Agent 4) ---
 def generate_followup(lead_id: str) -> Dict:
-    """
-    Generates a personalized follow-up email, updates the status, AND sends the email.
-    """
-    logger.info(f"Agent 4: Starting report and follow-up generation for Lead {lead_id}...")
+    logger.info(f"Agent 4: Starting report generation for Lead {lead_id}...")
     lead = get_lead_by_id(lead_id)
 
-    # 1. Prerequisite Check
     if not lead or lead.get('interaction', {}).get('call_status') != "Analyzed - Ready for Follow-up":
-        return {"success": False, "error": "Lead not ready for Agent 4 (Analysis not complete)."}
+        return {"success": False, "error": "Lead not ready for Agent 4."}
 
-    # Extract data safely
     analysis = lead.get('analysis', {})
     personal = lead.get('personal', {})
     enrollment = lead.get('enrollment', {})
@@ -90,29 +74,45 @@ def generate_followup(lead_id: str) -> Dict:
     lead_name = personal.get('name', 'Valued Customer')
     course_interest = enrollment.get('course_interest', 'General Inquiry')
     next_steps_text = analysis.get('next_steps', 'schedule a follow-up call')
-    recipient_email = personal.get('email')  # Get recipient email
+    recipient_email = personal.get('email')
 
-    if not analysis.get('summary'):
-        return {"success": False, "error": "Analysis summary is missing in the database."}
+    # 🟢 2. NEW: Identify the correct video link
+    # Interest ko match karenge, agar match nahi hua toh empty string
+    selected_video_url = COURSE_VIDEO_LINKS.get(course_interest, "")
 
-    # 1. Generate Email Content using Gemini
+    # 🟢 3. NEW: Generate Video Section HTML (If link exists)
+    video_section_html = ""
+    if selected_video_url:
+        video_section_html = f"""
+        <div style="margin: 20px 0; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #f9f9f9;">
+            <p>Aapne call par <b>{course_interest}</b> mein ruchi dikhayi thi. Hamne aapke liye ek demo video share kiya hai:</p>
+
+            <a href="{selected_video_url}" 
+               target="_blank" 
+               rel="noopener noreferrer"
+               style="background-color: #ff4b4b; color: white; padding: 12px 25px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">
+                📺 Watch {course_interest} Demo Video
+            </a>
+        </div>
+        """
+
     USER_PROMPT = f"""
     Generate a follow-up email.
     Lead Name: {lead_name}
     Analysis Summary: {analysis.get('summary')}
     Next Step: {next_steps_text}
     Course: {course_interest}
+    Video Section HTML: {video_section_html}
+    Instruction: Incorporate the Video Section HTML naturally into the body.
     """
 
-    # ... (Gemini call or mock logic to get email_result dictionary) ...
     if client is None or MODEL_NAME == 'mock-model':
         email_result = {
-            "subject": f"Follow-up regarding your {course_interest} consultation (Mock)",
-            "body_html": f"<html><body><p>Dear {lead_name},</p><p>Thank you for the call! As discussed, the next step is: <b>{next_steps_text}</b>.</p><p>Best regards, [Your Name/Team Name]</p></body></html>"
+            "subject": f"Follow-up: Your {course_interest} Inquiry",
+            "body_html": f"<html><body><p>Dear {lead_name},</p><p>Summary: {analysis.get('summary')}</p>{video_section_html}<p>Next Step: {next_steps_text}</p></body></html>"
         }
     else:
         try:
-            # Code to call Gemini API
             response = client.models.generate_content(
                 model=MODEL_NAME,
                 contents=[USER_PROMPT],
@@ -125,10 +125,10 @@ def generate_followup(lead_id: str) -> Dict:
             )
             email_result = response.parsed.model_dump()
         except Exception as e:
-            logger.error(f"Gemini Email Generation Failed: {e}")
-            return {"success": False, "error": f"Email generation failed: {e}"}
+            logger.error(f"Gemini Generation Failed: {e}")
+            return {"success": False, "error": str(e)}
 
-    # 2. Update MongoDB (Save report and set FINAL status)
+    # Final DB Update
     update_data = {
         "$set": {
             "interaction.call_status": "Follow-up Sent - Complete",
@@ -137,19 +137,9 @@ def generate_followup(lead_id: str) -> Dict:
             "analysis.report_body_html": email_result['body_html']
         }
     }
+    update_lead_status(lead_id, update_data)
 
-    db_result = update_lead_status(lead_id, update_data)
+    if recipient_email:
+        send_email_via_smtp(recipient_email, email_result['subject'], email_result['body_html'])
 
-    if db_result.get('acknowledged'):
-        logger.info(f"✅ Agent 4: Report saved to DB for {lead_id}.")
-
-        # 3. CRITICAL: SEND EMAIL
-        if recipient_email:
-            send_status = send_email_via_smtp(recipient_email, email_result['subject'], email_result['body_html'])
-            if not send_status:
-                logger.error("Email sending failed (Check SMTP logs). Status updated in DB anyway.")
-
-        return {"success": True, "report": email_result}
-    else:
-        logger.error(f"🔴 Agent 4: Failed to save final report to DB for {lead_id}.")
-        return {"success": False, "error": "Failed to save final report to database."}
+    return {"success": True, "report": email_result}

@@ -72,9 +72,13 @@ def run_lead_scoring(lead_id: str) -> Dict:
     if not lead:
         return {"success": False, "error": f"Lead {lead_id} not found."}
 
+    # 🟢 UPDATE: Maine condition change kar di hai taaki 'Analyzed' leads bhi score ho sakein
+    # Isse table mein zyada data dikhega.
     current_status = lead.get("interaction", {}).get("call_status", "")
-    if current_status not in ["Follow-up Sent - Complete"]:
-        return {"success": False, "error": "Lead is not ready for scoring stage yet."}
+    allowed_statuses = ["Follow-up Sent - Complete", "Analyzed - Ready for Follow-up", "Transcript Received"]
+
+    if not any(status in current_status for status in allowed_statuses) and "Scored" not in current_status:
+        return {"success": False, "error": f"Lead {lead_id} is not ready (Status: {current_status})"}
 
     try:
         X = build_feature_row_from_lead(lead)
@@ -82,6 +86,7 @@ def run_lead_scoring(lead_id: str) -> Dict:
         raw = float(ml_model.predict(X)[0])
         base_score = raw * 100
 
+        # Scaling Logic
         if base_score < 5:
             score = base_score * 6
         elif base_score < 20:
@@ -91,9 +96,9 @@ def run_lead_scoring(lead_id: str) -> Dict:
         else:
             score = 70 + ((base_score - 50) * 1.5)
 
-        # Add CRM manual boost
+        # CRM manual boost
         call_count = lead.get("interaction", {}).get("call_count", 0)
-        score += min(call_count / 2, 20)  # Boost up to +20
+        score += min(call_count / 2, 20)
 
         score = round(min(max(score, 0), 100), 3)
         tag = determine_priority(score)
@@ -119,6 +124,7 @@ def run_lead_scoring(lead_id: str) -> Dict:
         logger.error(f"🔥 Score Prediction Failed: {e}")
         return {"success": False, "error": str(e)}
 
+
 def explain_lead_score(lead_id: str):
     global explainer
 
@@ -129,26 +135,25 @@ def explain_lead_score(lead_id: str):
 
         status = lead.get("interaction", {}).get("call_status", "")
         if "Scored" not in status:
-            return {"success": False, "error": "Lead must be scored before explanation"}
+            # 🟢 NEW: Agar score nahi hua hai toh pehle score run karlo
+            run_lead_scoring(lead_id)
+            lead = get_lead_by_id(lead_id)
 
-        # Build ML input row
         X = build_feature_row_from_lead(lead)
 
         preprocessor = ml_model.named_steps["preprocess"]
         model = ml_model.named_steps["model"]
 
-        # Transform for SHAP
         X_processed = preprocessor.transform(X)
         if hasattr(X_processed, "toarray"):
             X_processed = X_processed.toarray().astype(float)
 
-        # Initialize SHAP analyzer
         if explainer is None:
             explainer = shap.TreeExplainer(model)
 
         shap_values = explainer.shap_values(X_processed)[0]
         base_value = float(explainer.expected_value)
-        # --- recreate correct feature list matching SHAP output ---
+
         ohe_features = preprocessor.transformers_[1][1].get_feature_names_out([
             "personal.source",
             "personal.location",
@@ -159,31 +164,14 @@ def explain_lead_score(lead_id: str):
 
         feature_names = ["interaction.call_count", "interaction.call_duration"] + list(ohe_features)
 
-        # Ensure same length
         if len(feature_names) != len(shap_values):
-            raise ValueError(f"Feature mismatch: {len(feature_names)} vs SHAP {len(shap_values)}")
-
-
+            # Fallback agar features mismatch ho jayein
+            feature_names = [f"Feature_{i}" for i in range(len(shap_values))]
 
         ranked = sorted(zip(feature_names, shap_values), key=lambda x: abs(x[1]), reverse=True)
 
-        # === SAME scoring logic from run_lead_scoring() ===
-        raw_pred = float(ml_model.predict(X)[0])
-        base_score = raw_pred * 100
-
-        if base_score < 5:
-            score = base_score * 6
-        elif base_score < 20:
-            score = base_score * 3
-        elif base_score < 50:
-            score = 40 + (base_score - 20)
-        else:
-            score = 70 + ((base_score - 50) * 1.5)
-
-        call_count = lead.get("interaction", {}).get("call_count", 0)
-        score += min(call_count / 2, 20)
-
-        score = round(min(max(score, 0), 100), 3)
+        # Logic for consistent prediction value
+        score = lead.get("score", {}).get("current_score", 50.0)
 
         return {
             "success": True,
