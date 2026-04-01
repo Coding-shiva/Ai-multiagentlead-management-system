@@ -1052,7 +1052,7 @@ def render_agent4_followup_page():
 
             # 2. Run Agent 4 Follow-up
             API_URL = f"{MAIN_URL}/api/v1/agent4/generate_followup/{lead_id}"
-            ok, resp = safe_post(API_URL, json_payload={}, timeout=60)
+            ok, resp = safe_post(API_URL, json_payload={}, timeout=140)
 
             # Fetch updated data to display result
             ok_final, lead_final = safe_get(f"{MAIN_URL}/api/v1/lead/{lead_id}")
