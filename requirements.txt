@@ -9,6 +9,8 @@ python-multipart
 # --- DATABASE ---
 pymongo
 motor
+gspread
+oauth2client
 
 # --- MACHINE LEARNING & PREDICTION ---
 numpy
