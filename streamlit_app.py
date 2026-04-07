@@ -118,7 +118,7 @@ def check_password(username, password):
     """Actual API call to Backend for Login."""
     try:
         # FastAPI login endpoint call
-        response = requests.post(f"{MAIN_URL}/api/v1/login", json={
+        response = requests.post(f"{MAIN_URL.rstrip('/')}/api/v1/login", json={
             "username": username,
             "password": password
         }, timeout=140)
@@ -558,7 +558,7 @@ def render_login_page():
                         st.warning("⚠️ Password ki length kam se kam 6 characters honi chahiye.")
                     else:
                         with st.spinner("Creating account on secure server..."):
-                            ok, resp = safe_post(f"{MAIN_URL}/api/v1/register", {"username": new_u, "password": new_p})
+                            ok, resp = safe_post(f"{MAIN_URL.rstrip('/')}/api/v1/register", {"username": new_u, "password": new_p})
                             if ok:
                                 st.success("✅ Account successfully created! Ab 'Login' tab par jaakar sign-in karein.")
                                 st.balloons()
