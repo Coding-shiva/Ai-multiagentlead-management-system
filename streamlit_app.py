@@ -115,8 +115,22 @@ if 'analysis_target_lead_id' not in st.session_state:
 # =======================================================
 
 def check_password(username, password):
-    """Mocks secure password check."""
-    return username == MANAGER_USERNAME and password == MANAGER_PASSWORD
+    """Actual API call to Backend for Login."""
+    try:
+        # FastAPI login endpoint call
+        response = requests.post(f"{MAIN_URL}/api/v1/login", json={
+            "username": username,
+            "password": password
+        }, timeout=140)
+
+        if response.status_code == 200:
+            return True, "Login Successful"
+        elif response.status_code == 401:
+            return False, "Invalid Username or Password"
+        else:
+            return False, f"Server Error: {response.status_code}"
+    except Exception as e:
+        return False, f"Connection Error: {e}"
 
 
 @st.cache_data
@@ -239,40 +253,62 @@ def render_footer():
 
 # --- RENDER NAV BAR ---
 def render_navbar(logged_in=False):
-    """Renders the custom dark, pill-shaped navigation bar."""
+    """Renders the custom dark, pill-shaped navigation bar with fixed alignment."""
 
     st.markdown('<div class="navbar-container">', unsafe_allow_html=True)
 
-    col_logo, col_home, col_about, col_contact, col_search, col_login = st.columns([1, 0.5, 0.7, 0.7, 1.5, 1])
+    # Columns ratios thode adjust kiye hain behtar spacing ke liye
+    col_logo, col_home, col_about, col_contact, col_search, col_auth = st.columns([1, 0.5, 0.7, 0.7, 1, 1.8])
 
     with col_logo:
         logo_base64 = get_img_as_base64("assets/logo.png")
         if logo_base64:
-            st.markdown(f'<img src="data:image/png;base64,{logo_base64}" width="100">', unsafe_allow_html=True)
+            st.markdown(f'<img src="data:image/png;base64,{logo_base64}" width="100" style="margin-top:-5px;">',
+                        unsafe_allow_html=True)
         else:
-            st.markdown("<div class='nav-logo'><h2>🎓InspireEd</h2></div>", unsafe_allow_html=True)
+            st.markdown("<div class='nav-logo'><h2 style='color:white !important; margin:0;'>🎓InspireEd</h2></div>",
+                        unsafe_allow_html=True)
 
     with col_home:
-        if st.button("Home", key="nav_home_r"): st.session_state.page = 'Home'
+        if st.button("Home", key="nav_home_r", use_container_width=True):
+            st.session_state.page = 'Home'
+            st.rerun()  # Turant change ke liye
+
     with col_about:
-        if st.button("About Agents", key="nav_about_r"): st.session_state.page = 'About'
+        if st.button("About", key="nav_about_r", use_container_width=True):
+            st.session_state.page = 'About'
+            st.rerun()
+
     with col_contact:
-        if st.button("Contact", key="nav_contact_r"): st.session_state.page = 'Contact'
+        if st.button("Contact", key="nav_contact_r", use_container_width=True):
+            st.session_state.page = 'Contact'
+            st.rerun()
 
-    
+    # Empty spacer (col_search ki jagah)
+    with col_search:
+        st.write("")
 
-    with col_login:
+    with col_auth:
         if not logged_in:
-            if st.button("🔑 Login/Signup", key="trigger_login", width='stretch'):
+            if st.button("🔑 Login/Signup", key="trigger_login", use_container_width=True):
                 st.session_state.page = 'Login'
-        else:
-            if st.button("Logout", key="nav_logout_r", width='stretch'):
-                st.session_state.logged_in = False
-                st.session_state.page = 'Home'
                 st.rerun()
+        else:
+            # ✅ LOGIN HONE PAR: Username aur Logout side-by-side
+            u_col, l_col = st.columns([1, 1])
+            with u_col:
+                username = st.session_state.get('user', 'Manager')
+                # CSS styling for white text
+                st.markdown(f'<p style="color:white; margin-top:10px; font-weight:bold;">👤 {username}</p>',
+                            unsafe_allow_html=True)
+            with l_col:
+                if st.button("Logout", key="nav_logout_r", type="secondary", use_container_width=True):
+                    st.session_state.logged_in = False
+                    st.session_state.user = None
+                    st.session_state.page = 'Home'
+                    st.rerun()
 
     st.markdown('</div>', unsafe_allow_html=True)
-
 
 def render_home_page():
     """Renders the 6-section Homepage (unlocked content)."""
@@ -463,42 +499,76 @@ def render_contact_page():
 
 
 def render_login_page():
-    """Renders a centered login/signup form with reduced width."""
-    st.markdown("<h1 style='text-align:center;'>Manager Login / Signup</h1>", unsafe_allow_html=True)
+    # 1. Page Header with CSS for better spacing
+    st.markdown("""
+        <div style='text-align:center; padding-bottom: 20px;'>
+            <h1 style='color: #1e3c72; margin-bottom: 0;'>🛡️ Manager Access Portal</h1>
+            <p style='color: #666;'>Secure entry to AI Lead Management System</p>
+        </div>
+    """, unsafe_allow_html=True)
+
     st.markdown("---")
 
-    # Create 3 columns → center column becomes the login box
-    col_left, col_center, col_right = st.columns([1, 1, 1])
+    # 2. Centered Layout (1:1.5:1 ratio keeps the box in middle)
+    col_left, col_center, col_right = st.columns([1, 1.8, 1])
 
     with col_center:
-        login_container = st.container(border=True)
-        with login_container:
+        # Container for a clean card-like look
+        with st.container(border=True):
+            tab_login, tab_signup = st.tabs(["🔑 Secure Login", "📝 Manager Signup"])
 
-            # ---- ADD USER ICON HERE ----
-            st.markdown(
-                """
-                <div style="text-align:center; margin-top:-10px;">
-                    <span style="font-size:70px;">👤</span>
-                </div>
-                """,
-                unsafe_allow_html=True
-            )
-            # --------------------------------
+            # --- LOGIN SECTION ---
+            with tab_login:
+                st.markdown("<br>", unsafe_allow_html=True)
+                u = st.text_input("Manager Username", key="l_user", placeholder="Enter your username")
+                p = st.text_input("Manager Password", type="password", key="l_pass", placeholder="••••••••")
 
-            st.markdown(
-                "<h3 style='text-align:center; margin-bottom:20px;'>Enter Manager Credentials</h3>",
-                unsafe_allow_html=True
-            )
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Access Dashboard →", type="primary", use_container_width=True):
+                    if not u or not p:
+                        st.warning("⚠️ Dono Username aur Password bharna zaroori hai.")
+                    else:
+                        success, msg = check_password(u, p)
+                        if success:
+                            st.session_state.logged_in = True
+                            st.session_state.user = u
+                            st.toast("Login Successful!", icon="✅")  # Chota success message
+                            st.success(f"Welcome back, {u}!")
+                            time.sleep(1)
+                            st.session_state.page = 'Dashboard'
+                            st.rerun()
+                        else:
+                            st.error(f"❌ {msg}")
 
-            login_username = st.text_input("Username", key="login_u")
-            login_password = st.text_input("Password", type="password", key="login_p")
+            # --- SIGNUP SECTION ---
+            with tab_signup:
+                st.markdown("<br>", unsafe_allow_html=True)
+                new_u = st.text_input("Create Username", key="s_user", placeholder="e.g. shivanand_manager")
+                new_p = st.text_input("Set Password", type="password", key="s_pass", placeholder="Min. 6 characters")
+                confirm_p = st.text_input("Confirm Password", type="password", key="s_confirm",
+                                          placeholder="Repeat password")
 
-            if st.button("Secure Login", key="do_login", type="primary", use_container_width=True):
-                handle_login_submit(login_username, login_password)
+                st.markdown("<br>", unsafe_allow_html=True)
+                if st.button("Create Manager Account", use_container_width=True):
+                    if not new_u or not new_p:
+                        st.error("⚠️ Sabhi fields bharna anivarya hai.")
+                    elif new_p != confirm_p:
+                        st.error("❌ Passwords match nahi kar rahe hain. Check karein.")
+                    elif len(new_p) < 6:
+                        st.warning("⚠️ Password ki length kam se kam 6 characters honi chahiye.")
+                    else:
+                        with st.spinner("Creating account on secure server..."):
+                            ok, resp = safe_post(f"{MAIN_URL}/api/v1/register", {"username": new_u, "password": new_p})
+                            if ok:
+                                st.success("✅ Account successfully created! Ab 'Login' tab par jaakar sign-in karein.")
+                                st.balloons()
+                            else:
+                                # Detail handle kar rahe hain jo backend (main.py) bhejega
+                                error_detail = resp.get('detail', 'Registration failed.')
+                                st.error(f"❌ {error_detail}")
 
-
-
-
+    st.markdown("<br><br>", unsafe_allow_html=True)
+    render_footer()
 def render_agent1_page():
     """Renders the dedicated page for Agent 1 Lead Pull (Fetch Phase)."""
 
@@ -1380,6 +1450,8 @@ def render_admin_dashboard():
             last_act_dt = None
 
         df_list.append({
+            "Lead ID": l.get('lead_id', 'N/A'),
+            "Name": l.get('personal', {}).get('name', 'Unknown'),
             "Status": l.get('interaction', {}).get('call_status', 'Unknown'),
             "Location": l.get('personal', {}).get('location', 'Unknown'),
             "Tag": l.get('score', {}).get('priority_tag', 'N/A'),
@@ -1516,7 +1588,7 @@ def render_live_monitor_page():
 
     if st.button("Start/Refresh Monitoring") and lead_id:
 
-        API_URL_BASE = "f{MAIN_URL}/api/v1/lead/"
+        API_URL_BASE = f"{MAIN_URL}/api/v1/lead/"
         st.warning(f"Monitoring Lead {lead_id}. Status will refresh every 2 seconds.")
 
         placeholder = st.empty()

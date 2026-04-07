@@ -7,7 +7,7 @@ from typing import List, Dict, Optional
 from bson.objectid import ObjectId
 from pymongo import MongoClient
 from dotenv import load_dotenv
-
+import bcrypt
 # Load environment variables (Localhost ke liye)
 load_dotenv()
 
@@ -19,12 +19,15 @@ LOCAL_CREDS_PATH = os.path.join(BASE_DIR, "credentials.json")
 MONGO_URI = os.getenv("MONGO_URI")
 DB_NAME = "sales_leads"
 COLLECTION_NAME = "leads"
+leads_collection = None
+managers_collection = None
 
 # Initialize MongoDB Connection
 try:
     client = MongoClient(MONGO_URI)
     db = client[DB_NAME]
     leads_collection = db[COLLECTION_NAME]
+    managers_collection=db["managers"]
 
     # Connection check
     client.admin.command('ismaster')
@@ -33,10 +36,34 @@ try:
 except Exception as e:
     print(f"❌ ERROR: MongoDB connection failed: {e}")
     leads_collection = None
+    managers_collection = None
 
+
+def hash_password(password: str) -> str:
+
+    return bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
+
+
+def verify_password(plain_password: str, hashed_password: str) -> bool:
+
+    return bcrypt.checkpw(plain_password.encode('utf-8'), hashed_password.encode('utf-8'))
+
+
+def register_manager(username, password):
+    if managers_collection.find_one({"username": username}):
+        return False, "Username already exists!"
+
+    hashed_pw = hash_password(password)
+    managers_collection.insert_one({
+        "username": username,
+        "password": hashed_pw,
+        "created_at": datetime.now()
+    })
+    return True, "Registration successful!"
 
 def get_leads_by_filter(filter_criteria: dict, limit: int = 10) -> List[Dict]:
     if leads_collection is None: return []
+
     leads = list(
         leads_collection.find(filter_criteria)
         .sort("score.current_score", -1)
@@ -165,6 +192,7 @@ def sync_google_sheets_to_db(sheet_name: str):
             email = row.get('Email') or row.get('email')
             if email and not check_lead_exists_in_db(email):
                 formatted_lead = map_sheet_row_to_lead(row)
+
                 save_lead_to_db(formatted_lead)
                 new_leads_added += 1
 
