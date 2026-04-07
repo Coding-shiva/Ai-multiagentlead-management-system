@@ -20,7 +20,7 @@ from agents.agent4_reporter import generate_followup
 from agents.agent5_scorer import run_lead_scoring ,explain_lead_score # 🟢 AGENT 5 IMPORTED
 
 # Import DB functions
-from db.database import get_leads_by_filter, update_lead_status, get_lead_by_id ,register_manager,verify_password,managers_collection
+from db.database import get_leads_by_filter, update_lead_status, get_lead_by_id
 
 
 # CRITICAL: Import the new service files created in the 'agents' directory
@@ -294,19 +294,6 @@ async def get_single_lead(lead_id: str):
     else:
         raise HTTPException(status_code=404, detail=f"Lead with ID {lead_id} not found.")
 
-@app.post("/api/v1/register")
-def signup(data: dict):
-    success, msg = register_manager(data['username'], data['password'])
-    if not success:
-        raise HTTPException(status_code=400, detail=msg)
-    return {"message": msg}
-
-@app.post("/api/v1/login")
-def login(data: dict):
-    manager = managers_collection.find_one({"username": data['username']})
-    if manager and verify_password(data['password'], manager['password']):
-        return {"status": "success", "username": manager['username']}
-    raise HTTPException(status_code=401, detail="Invalid credentials")
 
 
 # --- Health Check Endpoint ---
