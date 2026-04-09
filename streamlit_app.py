@@ -1042,11 +1042,11 @@ def render_agent4_followup_page():
             lead_id = lead["lead_id"]
 
             # 1. Run Agent 3 Analysis
-            safe_post(f"{MAIN_URL}/api/v1/agent3/analyze_lead/{lead_id}", json_payload={}, timeout=60)
+            safe_post(f"{MAIN_URL}/api/v1/agent3/analyze_lead/{lead_id}", json_payload={}, timeout=120)
 
             # 2. Run Agent 4 Follow-up
             API_URL = f"{MAIN_URL}/api/v1/agent4/generate_followup/{lead_id}"
-            ok, resp = safe_post(API_URL, json_payload={}, timeout=60)
+            ok, resp = safe_post(API_URL, json_payload={}, timeout=120)
 
             # Fetch updated data to display result
             ok_final, lead_final = safe_get(f"{MAIN_URL}/api/v1/lead/{lead_id}")
