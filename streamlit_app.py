@@ -485,8 +485,8 @@ def render_login_page():
                 unsafe_allow_html=True
             )
 
-            login_username = st.text_input("Username", key="login_u")
-            login_password = st.text_input("Password", type="password", key="login_p")
+            login_username = st.text_input("Username", key="login_u",placeholder="Enter Username-admin")
+            login_password = st.text_input("Password", type="password", key="login_p",placeholder="Enter password-admin@123")
 
             if st.button("Secure Login", key="do_login", type="primary", use_container_width=True):
                 handle_login_submit(login_username, login_password)
